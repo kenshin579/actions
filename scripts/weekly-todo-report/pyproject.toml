@@ -1,0 +1,43 @@
+# Minimal pyproject.toml for this repository
+# - Python tooling/packaging metadata
+# - Dependencies required by scripts under scripts/weekly-todo-report/
+#
+# Note:
+# 1) This repo currently contains scripts only (not an installable package).
+#    We therefore do not define console entry points. Use run.sh or call the
+#    script directly (python scripts/weekly-todo-report/main.py).
+# 2) The code imports an external SDK named "agents" (providing Agent, Runner,
+#    ModelSettings, AsyncOpenAI, OpenAIChatCompletionsModel, MCPServerStdio).
+#    If your environment uses a differently named distribution, adjust the
+#    dependency below accordingly.
+
+[build-system]
+requires = ["hatchling>=1.24.2"]
+build-backend = "hatchling.build"
+
+[project]
+name = "weekly-todo-report"
+version = "0.1.0"
+description = "Weekly GitHub TODO/Report generator using Agents SDK + GitHub MCP"
+readme = "../../README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [
+  { name = "Your Name", email = "you@example.com" },
+]
+keywords = ["github", "report", "mcp", "agents", "automation"]
+# Runtime dependencies inferred from scripts
+# - PyYAML for team.yml parsing
+# - openai-agents SDK for Agent/Runner/OpenAI wrappers and MCP stdio client
+dependencies = [
+  "PyYAML>=6.0.2",  # 현재 사용 중인 버전 이상
+  "openai-agents>=0.2.9",  # 현재 사용 중인 버전 이상
+]
+
+[project.urls]
+Homepage = "https://github.com/your-org/my-actions"
+
+# We ship a single-module script for editable installs. Configure hatch to include it.
+[tool.hatch.build.targets.wheel]
+# We ship the current directory as a package; include this package explicitly.
+packages = ["."]
