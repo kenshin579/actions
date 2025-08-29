@@ -105,10 +105,13 @@ async def build_agent(repos: List[Repo], start_kst: datetime, end_kst: datetime)
                 "-e", "GITHUB_READ_ONLY",
                 "ghcr.io/github/github-mcp-server",
             ],
+            "env": mcp_env,  # 환경변수를 params 안에 포함
         },
-        env=mcp_env,
         cache_tools_list=True,   # 툴 목록 캐시
     )
+
+    # MCP 서버 연결
+    await github_mcp.connect()
 
     # 보고서 생성 지시문 (한국어)
     start_iso_kst = start_kst.isoformat()

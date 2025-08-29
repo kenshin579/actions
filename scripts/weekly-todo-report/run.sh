@@ -8,6 +8,7 @@ export GITHUB_READ_ONLY="1"                        # 안전하게 조회 전용
 
 echo "OPENAI_BASE_URL: $OPENAI_BASE_URL"
 echo "OPENAI_API_KEY: $OPENAI_API_KEY"
+echo "GITHUB_PERSONAL_ACCESS_TOKEN: $GITHUB_PERSONAL_ACCESS_TOKEN"
 
 
 export REPOS="kenshin579/tutorials-python, kenshin579/actions, kenshin579/inspireme.advenoh.pe.kr, kenshin579/stock.advenoh.pe.kr"
@@ -23,4 +24,4 @@ set -euo pipefail
 # pip install -e .
 
 # 스크립트 실행
-#source .venv/bin/activate && python main.py
+source .venv/bin/activate && python main.py
