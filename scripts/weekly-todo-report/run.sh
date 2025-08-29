@@ -2,7 +2,7 @@
 export OPENAI_BASE_URL=$MODEL_CONNECT_API_URL
 export OPENAI_API_KEY=$MODEL_CONNECT_API_KEY
 
-export GITHUB_PERSONAL_ACCESS_TOKEN=$GITHUB_API_KEY
+export GITHUB_PERSONAL_ACCESS_TOKEN=$GITHUB_PERSONAL_ACCESS_TOKEN
 export GITHUB_TOOLSETS="repos,issues,pull_requests"
 export GITHUB_READ_ONLY="1"                        # 안전하게 조회 전용
 
@@ -10,9 +10,6 @@ echo "OPENAI_BASE_URL: $OPENAI_BASE_URL"
 echo "OPENAI_API_KEY: $OPENAI_API_KEY"
 echo "GITHUB_PERSONAL_ACCESS_TOKEN: $GITHUB_PERSONAL_ACCESS_TOKEN"
 
-
-export REPOS="kenshin579/tutorials-python, kenshin579/actions, kenshin579/inspireme.advenoh.pe.kr, kenshin579/stock.advenoh.pe.kr"
-export TEAM_YAML="./team.yml"
 export OPENAI_MODEL="gpt-4.1-mini"                 # 내부 모델명으로 교체 가능
 
 # 2) 실행 (로컬 가상환경 활성화 후, 편의상 개발 모드 설치 및 실행)

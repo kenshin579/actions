@@ -3,10 +3,13 @@
 
 import os
 import asyncio
+import argparse
+import re
+import signal
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from dataclasses import dataclass
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 
 from agents import (
     Agent,
@@ -66,9 +69,110 @@ def this_week_range_kst(now: Optional[datetime] = None):
 def iso_utc(dt_kst: datetime) -> str:
     return dt_kst.astimezone(ZoneInfo("UTC")).isoformat()
 
+def load_prompt_template(template_name: str) -> str:
+    """Load prompt template from .prompts directory"""
+    template_path = os.path.join(".prompts", template_name)
+    try:
+        with open(template_path, "r", encoding="utf-8") as f:
+            return f.read().strip()
+    except FileNotFoundError:
+        raise RuntimeError(f"Prompt template not found: {template_path}")
+
+def format_prompt_template(template: str, **kwargs) -> str:
+    """Format prompt template with provided variables"""
+    try:
+        return template.format(**kwargs)
+    except KeyError as e:
+        raise RuntimeError(f"Missing template variable: {e}")
+
+def parse_yaml_header(content: str) -> Dict[str, Any]:
+    """Parse YAML header from markdown content"""
+    yaml_pattern = r'^---\s*\n(.*?)\n---\s*\n'
+    match = re.search(yaml_pattern, content, re.DOTALL)
+
+    if not match:
+        return {}
+
+    yaml_content = match.group(1)
+
+    # Simple YAML parsing for github section
+    result = {}
+    lines = yaml_content.strip().split('\n')
+
+    current_section = None
+    for line in lines:
+        line = line.strip()
+        if not line or line.startswith('#'):
+            continue
+
+        if line.startswith('github:'):
+            current_section = 'github'
+            result['github'] = {}
+        elif current_section == 'github':
+            if line.startswith('owner:'):
+                owner = line.split(':', 1)[1].strip()
+                result['github']['owner'] = owner
+            elif line.startswith('repos:'):
+                result['github']['repos'] = []
+            elif line.startswith('- ') and 'repos' in result['github']:
+                repo = line[2:].strip()
+                result['github']['repos'].append(repo)
+
+    return result
+
+def extract_github_info_from_prompt(prompts_file: str) -> tuple[str, List[str]]:
+    """Extract github owner and repos from prompt file"""
+    template_content = load_prompt_template(prompts_file)
+    yaml_data = parse_yaml_header(template_content)
+
+    if 'github' not in yaml_data:
+        raise RuntimeError(f"GitHub 정보가 {prompts_file} 파일에 없습니다.")
+
+    github_info = yaml_data['github']
+    owner = github_info.get('owner')
+    repos = github_info.get('repos', [])
+
+    if not owner:
+        raise RuntimeError(f"GitHub owner가 {prompts_file} 파일에 없습니다.")
+
+    if not repos:
+        raise RuntimeError(f"GitHub repos가 {prompts_file} 파일에 없습니다.")
+
+    return owner, repos
+
+def parse_arguments():
+    """Parse command line arguments"""
+    parser = argparse.ArgumentParser(
+        description="주간업무 보고서 생성 봇",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+사용 예시:
+  python main.py
+  python main.py --prompts-file custom_report.md --output-dir ./reports
+
+주의: 대상 저장소와 GitHub 정보는 프롬프트 파일의 YAML 헤더에서 자동으로 읽어옵니다.
+        """
+    )
+
+    parser.add_argument(
+        '--prompts-file',
+        type=str,
+        default='weekly_report.md',
+        help='사용할 프롬프트 템플릿 파일 (.prompts 폴더 내 파일명) (기본값: weekly_report.md)'
+    )
+
+    parser.add_argument(
+        '--output-dir',
+        type=str,
+        default='.',
+        help='보고서 파일을 생성할 디렉토리 (기본값: 현재 디렉토리)'
+    )
+
+    return parser.parse_args()
+
 # ---------- 메인 에이전트 ----------
 
-async def build_agent(repos: List[Repo], start_kst: datetime, end_kst: datetime) -> Agent:
+async def build_agent(repos: List[Repo], start_kst: datetime, end_kst: datetime, prompts_file: str = "weekly_report.md") -> tuple[Agent, MCPServerStdio]:
     """
     Agents SDK + GitHub MCP (Docker, stdio) 연동 에이전트 구성
     - MCP 서버는 read-only 로 띄워 안전하게 조회만 수행
@@ -113,7 +217,7 @@ async def build_agent(repos: List[Repo], start_kst: datetime, end_kst: datetime)
     # MCP 서버 연결
     await github_mcp.connect()
 
-    # 보고서 생성 지시문 (한국어)
+    # 보고서 생성 지시문 (한국어) - 외부 템플릿 파일에서 로드
     start_iso_kst = start_kst.isoformat()
     end_iso_kst = end_kst.isoformat()
     start_iso_utc = iso_utc(start_kst)
@@ -121,51 +225,18 @@ async def build_agent(repos: List[Repo], start_kst: datetime, end_kst: datetime)
 
     repo_text = "\n".join([f"- {r.owner}/{r.name}" for r in repos])
 
-    # GitHub MCP가 제공하는 검색/이슈/PR 관련 툴을 사용하여 데이터 수집하도록 지시
-    # (서버가 노출하는 툴 이름은 버전에 따라 다를 수 있으나, MCP 툴 설명을 기반으로 LLM이 선택함)
-    instructions = f"""
-당신은 '주간업무 보고서 봇'입니다. 반드시 GitHub MCP 툴만 사용해 데이터를 수집한 뒤 한국어 Markdown 보고서를 작성하세요.
-
-[타임프레임]
-- 기준 타임존: KST(Asia/Seoul)
-- KST: {start_iso_kst} ~ {end_iso_kst}
-- UTC: {start_iso_utc} ~ {end_iso_utc}
-
-[대상 저장소]
-{repo_text}
-
-[수집 지침]
-1) '이번주' 범위({start_iso_utc}..{end_iso_utc}, UTC)로 다음을 각 repo별로 수집:
-   - 머지된 PR (is:pr is:merged merged:범위)
-   - 닫힌 이슈 (is:issue is:closed closed:범위)
-   - (가능하면) 커밋/릴리즈 노트/Actions 실패율 등도 조회
-2) 각 항목에 대해: 제목, 링크, 작성자, 라벨, 머지/클로즈 일시, (가능하면) 변경 파일 수/추가/삭제 라인.
-3) 개인별 성과 집계: PR/이슈 수, 주요 기여 요약.
-4) '리스크/차주 계획' 섹션은 수집된 이슈/PR 라벨과 설명, 코멘트를 참고해 간결히 작성.
-
-[출력 포맷: Markdown]
-# {end_kst.date().isoformat()} 주간업무 보고서
-- 보고 범위: {start_iso_kst} ~ {end_iso_kst} (KST)
-
-## 하이라이트 (3~6줄)
-- ...
-
-## 개인별 요약
-- PR/이슈 수와 핵심 성과 bullet
-
-## 레포지토리별 상세
-### owner/repo
-- PR: ...
-- 이슈: ...
-
-## 메트릭 (가능하면)
-- PR 머지 수, 평균 리드타임, 라벨 분포 등
-
-## 리스크 & 차주 계획
-- ...
-
-[중요] 반드시 MCP 툴을 호출해서 실제 데이터로 작성. 임의로 지어내지 말 것.
-    """.strip()
+    # 템플릿 파일에서 프롬프트 로드 및 변수 치환
+    template = load_prompt_template(prompts_file)
+    instructions = format_prompt_template(
+        template,
+        start_iso_kst=start_iso_kst,
+        end_iso_kst=end_iso_kst,
+        start_iso_utc=start_iso_utc,
+        end_iso_utc=end_iso_utc,
+        repo_text=repo_text,
+        start_date=start_kst.date().isoformat(),
+        end_date=end_kst.date().isoformat()
+    )
 
     agent = Agent(
         name="Weekly Reporter",
@@ -178,28 +249,99 @@ async def build_agent(repos: List[Repo], start_kst: datetime, end_kst: datetime)
         model_settings=ModelSettings(temperature=0.2),
         mcp_servers=[github_mcp],
     )
-    return agent
+    return agent, github_mcp
 
 async def main():
-    # 환경변수
-    repos_env = os.getenv("REPOS")  # 예: "your-org/app, your-org/data-pipeline"
-    if not repos_env:
-        raise RuntimeError("REPOS 환경변수에 'owner/repo' 콤마리스트를 지정하세요.")
-    repos = parse_repos(repos_env)
+    # 명령어 인자 파싱
+    args = parse_arguments()
+    github_mcp = None
 
-    start_kst, end_kst = this_week_range_kst()
+    try:
+        # 프롬프트 파일에서 GitHub 정보 추출
+        owner, repo_names = extract_github_info_from_prompt(args.prompts_file)
+        print(f"✅ 프롬프트 파일에서 GitHub 정보 로드: {owner} (레포지토리 {len(repo_names)}개)")
 
-    agent = await build_agent(repos, start_kst, end_kst)
+        # Repo 객체 생성
+        repos = [Repo(owner=owner, name=repo_name) for repo_name in repo_names]
 
-    # 프롬프트는 간단히. 상세 지시는 instructions에 있음.
-    user_input = "이번주 주간업무 보고서를 작성해줘. 모든 수치는 MCP로 확인해."
-    result = await Runner.run(agent, input=user_input, max_turns=3)
+        start_kst, end_kst = this_week_range_kst()
 
-    md = result.final_output or "(결과가 비어있습니다)"
-    out_name = f"weekly_report_{end_kst.date().isoformat()}.md"
-    with open(out_name, "w", encoding="utf-8") as f:
-        f.write(md)
-    print(f"\n✅ 저장됨: {out_name}\n")
+        # 에이전트 생성 (MCP 클라이언트 포함)
+        agent, github_mcp = await build_agent(repos, start_kst, end_kst, args.prompts_file)
+
+        # 프롬프트는 간단히. 상세 지시는 instructions에 있음.
+        user_input = "이번주 주간업무 보고서를 작성해줘. 모든 수치는 MCP로 확인해."
+
+        print("🔄 보고서 생성 중...")
+        result = await Runner.run(agent, input=user_input, max_turns=3)
+
+        md = result.final_output or "(결과가 비어있습니다)"
+
+        # 출력 디렉토리 생성 및 파일 저장
+        output_dir = os.path.abspath(args.output_dir)
+        os.makedirs(output_dir, exist_ok=True)
+
+        # 파일명 생성: 파일이름_startdate_enddate.md (또는 _HHMMSS.md)
+        prompt_basename = os.path.splitext(args.prompts_file)[0]  # 확장자 제거
+        start_date = start_kst.date().isoformat()
+        end_date = end_kst.date().isoformat()
+
+        # 기본 파일명 생성
+        base_name = f"{prompt_basename}_{start_date}_{end_date}"
+        out_name = f"{base_name}.md"
+        out_path = os.path.join(output_dir, out_name)
+
+        # 파일이 이미 존재하는 경우 타임스탬프 추가
+        if os.path.exists(out_path):
+            current_time = datetime.now().strftime("%H%M%S")
+            out_name = f"{base_name}_{current_time}.md"
+            out_path = os.path.join(output_dir, out_name)
+            print(f"📁 기존 파일이 존재하여 타임스탬프 추가: {out_name}")
+
+        with open(out_path, "w", encoding="utf-8") as f:
+            f.write(md)
+
+        print(f"\n✅ 보고서 생성 완료!")
+        print(f"📁 저장 위치: {out_path}")
+        print(f"📊 보고서 기간: {start_date} ~ {end_date}")
+
+    except KeyboardInterrupt:
+        print("\n⚠️  사용자에 의해 중단되었습니다.")
+    except Exception as e:
+        print(f"\n❌ 오류 발생: {e}")
+        raise
+    finally:
+        # MCP 클라이언트 정리
+        if github_mcp:
+            try:
+                print("🔄 MCP 클라이언트 연결 해제 중...")
+                await github_mcp.disconnect()
+                print("✅ MCP 클라이언트 연결 해제 완료")
+            except Exception as e:
+                print(f"⚠️  MCP 클라이언트 연결 해제 중 오류 (무시됨): {e}")
+                # MCP 연결 해제 오류는 무시하고 계속 진행
+
+async def run_main():
+    """메인 함수를 시그널 핸들링과 함께 실행"""
+    # 시그널 핸들러 설정
+    def signal_handler(signum, frame):
+        print(f"\n⚠️  시그널 {signum} 수신. 안전하게 종료합니다...")
+        raise KeyboardInterrupt("사용자 시그널로 인한 중단")
+
+    # SIGINT (Ctrl+C) 핸들러 등록
+    signal.signal(signal.SIGINT, signal_handler)
+
+    try:
+        await main()
+    except KeyboardInterrupt:
+        print("\n⚠️  프로그램이 중단되었습니다.")
+        return 1
+    except Exception as e:
+        print(f"\n❌ 치명적 오류: {e}")
+        return 1
+
+    return 0
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    exit_code = asyncio.run(run_main())
+    exit(exit_code)
