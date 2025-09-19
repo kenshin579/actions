@@ -1,5 +1,8 @@
 name: Label Merge Conflict
 
+on:
+  workflow_call:
+
 jobs:
   auto-label:
     runs-on: ubuntu-latest
