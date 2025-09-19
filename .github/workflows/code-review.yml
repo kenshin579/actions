@@ -25,7 +25,7 @@ jobs:
         env:
           OPENAI.API_BASE: ${{vars.OPENAI_API_BASE}}
           OPENAI.KEY: ${{ secrets.OPENAI_API_KEY }}
-          GITHUB.BASE_URL: https://github.com/api/v3
+          GITHUB.BASE_URL: https://api.github.com
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_ACTION_CONFIG.AUTO_DESCRIBE: true
           GITHUB_ACTION_CONFIG.AUTO_REVIEW: true
