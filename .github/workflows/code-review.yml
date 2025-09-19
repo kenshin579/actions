@@ -11,7 +11,7 @@ on:
 jobs:
   pr_agent_job:
     if: ${{ github.event.sender.type != 'Bot' }}
-    runs-on: [ self-hosted ]
+    runs-on: ubuntu-latest
     permissions:
       issues: write
       pull-requests: write
@@ -22,16 +22,16 @@ jobs:
         id: pragent
         uses: qodo-ai/pr-agent@main
         env:
-          OPENAI.API_BASE: https://aac-api.navercorp.com/v1
-          OPENAI.KEY: ${{ secrets.MODEL_CONNECT_API_KEY }}
-          GITHUB.BASE_URL: https://es.naverlabs.com/api/v3
+          OPENAI.API_BASE: {{vars.OPENAI_API_BASE}}
+          OPENAI.KEY: ${{ secrets.API_KEY }}
+          GITHUB.BASE_URL: https://github.com/api/v3
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_ACTION_CONFIG.AUTO_DESCRIBE: true
           GITHUB_ACTION_CONFIG.AUTO_REVIEW: true
           GITHUB_ACTION_CONFIG.AUTO_IMPROVE: true
           GITHUB_ACTION_CONFIG.PR_ACTIONS: "[ 'opened', 'reopened', 'synchronize', 'ready_for_review']"
-          CONFIG.MODEL: o3-mini
-          CONFIG.FALLBACK_MODEL: gpt-4.1
+          CONFIG.MODEL: deepseek/deepseek-r1-0528-qwen3-8b
+          CONFIG.FALLBACK_MODEL: deepseek/deepseek-r1-0528-qwen3-8b
           CONFIG.RESPONSE_LANGUAGE: ko-KR
           CONFIG.MAX_MODEL_TOKENS: 200000
           PR_REVIEWER.ENABLE_HELP_TEXT: true
