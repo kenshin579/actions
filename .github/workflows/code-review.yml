@@ -1,4 +1,5 @@
-pr-agent: Automated Code Review
+name: Automated Code Review
+
 on:
   workflow_call:
     inputs:
