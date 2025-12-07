@@ -11,9 +11,16 @@ GitHub Actions 및 자동화 스크립트 모음 저장소. 재사용 가능한 
 ### GitHub Workflows (`.github/workflows/`)
 
 재사용 가능한 워크플로우 (`workflow_call` 트리거):
+
+**PR 자동화**:
 - **auto-merge-pr.yml**: `MergeReady` 라벨이 있는 PR 자동 머지 (주간 제한 적용)
 - **label-merge-conflict.yml**: PR 충돌 감지 시 자동 라벨링
 - **code-review.yml**: Qodo PR Agent를 활용한 자동 코드 리뷰 (DeepSeek 모델 사용)
+
+**릴리스 자동화**:
+- **release.yml**: Semantic versioning 기반 태그 생성 및 GitHub Release
+- **docker-publish.yml**: Multi-platform Docker 이미지 빌드 및 레지스트리 푸시
+- **pypi-publish.yml**: Python 패키지 PyPI 배포 (테스트 실행 옵션 포함)
 
 ### Weekly Report Script (`scripts/weekly-todo-report/`)
 
