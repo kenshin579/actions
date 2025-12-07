@@ -1,0 +1,119 @@
+name: Create Release
+
+on:
+  workflow_call:
+    inputs:
+      version_type:
+        description: 'Version bump type (patch, minor, major)'
+        type: string
+        required: false
+        default: 'minor'
+      tag_prefix:
+        description: 'Tag prefix'
+        type: string
+        required: false
+        default: 'v'
+      create_release:
+        description: 'Create GitHub Release'
+        type: boolean
+        required: false
+        default: true
+    outputs:
+      new_version:
+        description: '생성된 새 버전'
+        value: ${{ jobs.release.outputs.new_version }}
+      previous_version:
+        description: '이전 버전'
+        value: ${{ jobs.release.outputs.previous_version }}
+      has_changes:
+        description: '변경사항 존재 여부'
+        value: ${{ jobs.release.outputs.has_changes }}
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      new_version: ${{ steps.calc_version.outputs.new_version }}
+      previous_version: ${{ steps.get_tag.outputs.latest_tag }}
+      has_changes: ${{ steps.check_changes.outputs.has_changes }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get latest tag
+        id: get_tag
+        run: |
+          PREFIX="${{ inputs.tag_prefix }}"
+          LATEST_TAG=$(git describe --tags --abbrev=0 --match "${PREFIX}*" 2>/dev/null || echo "${PREFIX}0.0.0")
+          echo "latest_tag=$LATEST_TAG" >> $GITHUB_OUTPUT
+          echo "Latest tag: $LATEST_TAG"
+
+      - name: Check for changes since last tag
+        id: check_changes
+        run: |
+          LAST_TAG="${{ steps.get_tag.outputs.latest_tag }}"
+          PREFIX="${{ inputs.tag_prefix }}"
+          if [ "$LAST_TAG" = "${PREFIX}0.0.0" ]; then
+            echo "has_changes=true" >> $GITHUB_OUTPUT
+            echo "No previous tag found. Proceeding with first release."
+          else
+            COMMIT_COUNT=$(git rev-list --count ${LAST_TAG}..HEAD)
+            if [ "$COMMIT_COUNT" -eq 0 ]; then
+              echo "has_changes=false" >> $GITHUB_OUTPUT
+              echo "::warning::No changes since $LAST_TAG. Skipping release."
+            else
+              echo "has_changes=true" >> $GITHUB_OUTPUT
+              echo "Found $COMMIT_COUNT commits since $LAST_TAG"
+            fi
+          fi
+
+      - name: Calculate new version
+        id: calc_version
+        if: steps.check_changes.outputs.has_changes == 'true'
+        run: |
+          CURRENT="${{ steps.get_tag.outputs.latest_tag }}"
+          PREFIX="${{ inputs.tag_prefix }}"
+          VERSION_TYPE="${{ inputs.version_type }}"
+
+          VERSION=${CURRENT#$PREFIX}
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$VERSION"
+
+          case $VERSION_TYPE in
+            major)
+              NEW_VERSION="${PREFIX}$((MAJOR + 1)).0.0"
+              ;;
+            minor)
+              NEW_VERSION="${PREFIX}${MAJOR}.$((MINOR + 1)).0"
+              ;;
+            patch)
+              NEW_VERSION="${PREFIX}${MAJOR}.${MINOR}.$((PATCH + 1))"
+              ;;
+          esac
+
+          echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
+          echo "New version: $NEW_VERSION"
+
+      - name: Create tag
+        if: steps.check_changes.outputs.has_changes == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag ${{ steps.calc_version.outputs.new_version }}
+          git push origin ${{ steps.calc_version.outputs.new_version }}
+
+      - name: Create GitHub Release
+        if: steps.check_changes.outputs.has_changes == 'true' && inputs.create_release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.calc_version.outputs.new_version }}
+          name: ${{ steps.calc_version.outputs.new_version }}
+          generate_release_notes: true
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

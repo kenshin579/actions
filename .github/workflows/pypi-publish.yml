@@ -1,0 +1,101 @@
+name: Publish to PyPI
+
+on:
+  workflow_call:
+    inputs:
+      python_version:
+        description: 'Python version'
+        type: string
+        required: false
+        default: '3.12'
+      run_tests:
+        description: 'Run tests before publish'
+        type: boolean
+        required: false
+        default: true
+      test_command:
+        description: 'Test command'
+        type: string
+        required: false
+        default: 'pytest'
+      create_release:
+        description: 'Create GitHub Release with dist files'
+        type: boolean
+        required: false
+        default: true
+    secrets:
+      PYPI_API_TOKEN:
+        required: true
+
+jobs:
+  test:
+    if: inputs.run_tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ inputs.python_version }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Run tests
+        run: ${{ inputs.test_command }}
+
+  build-and-publish:
+    needs: [test]
+    if: always() && (needs.test.result == 'success' || needs.test.result == 'skipped')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ inputs.python_version }}
+
+      - name: Install build tools
+        run: |
+          python -m pip install --upgrade pip
+          pip install build twine setuptools-scm
+
+      - name: Verify version from tag
+        run: |
+          TAG_VERSION=${GITHUB_REF#refs/tags/v}
+          echo "Tag version: $TAG_VERSION"
+          python -m setuptools_scm
+
+      - name: Build package
+        run: |
+          rm -rf dist/ build/ *.egg-info
+          python -m build
+          ls -lh dist/
+
+      - name: Publish to PyPI
+        env:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
+        run: python -m twine upload dist/*
+
+      - name: Create GitHub Release
+        if: inputs.create_release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -61,6 +61,116 @@ jobs:
       ignore_glob: "['**/mocks/**', 'swagdocs/**']"
 ```
 
+### Release (`release.yml`)
+
+수동으로 Tag 생성 및 GitHub Release를 생성합니다.
+
+**특징:**
+- Semantic Versioning (major/minor/patch)
+- 변경사항 없으면 자동 스킵
+- GitHub Release 자동 생성 (release notes 포함)
+
+**입력:**
+- `version_type`: 버전 증가 타입 (`patch`, `minor`, `major`)
+- `tag_prefix`: 태그 접두사 (기본값: `v`)
+- `create_release`: GitHub Release 생성 여부 (기본값: `true`)
+
+**출력:**
+- `new_version`: 생성된 새 버전
+- `previous_version`: 이전 버전
+- `has_changes`: 변경사항 존재 여부
+
+**사용법:**
+```yaml
+name: Create Release
+on:
+  workflow_dispatch:
+    inputs:
+      version_type:
+        type: choice
+        options: [patch, minor, major]
+        default: 'minor'
+
+jobs:
+  release:
+    uses: kenshin579/actions/.github/workflows/release.yml@main
+    with:
+      version_type: ${{ inputs.version_type }}
+    secrets: inherit
+```
+
+### Docker Publish (`docker-publish.yml`)
+
+Tag push 시 Docker 이미지를 빌드하고 레지스트리에 push합니다.
+
+**특징:**
+- Multi-platform 빌드 지원 (amd64, arm64)
+- Semantic versioning 태그 자동 생성
+- GHA 캐시 활용
+
+**입력:**
+- `image_name`: Docker 이미지 이름 (필수)
+- `platforms`: 빌드 플랫폼 (기본값: `linux/amd64,linux/arm64`)
+- `registry`: Docker 레지스트리 (기본값: `docker.io`)
+
+**필요한 Secrets:**
+- `DOCKER_USERNAME`: Docker 레지스트리 사용자명
+- `DOCKER_PASSWORD`: Docker 레지스트리 비밀번호
+
+**사용법:**
+```yaml
+name: Docker Build & Push
+on:
+  push:
+    tags: ['v*']
+
+jobs:
+  docker:
+    uses: kenshin579/actions/.github/workflows/docker-publish.yml@main
+    with:
+      image_name: my-app
+      platforms: linux/arm64
+    secrets:
+      DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
+      DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
+```
+
+### PyPI Publish (`pypi-publish.yml`)
+
+Tag push 시 Python 패키지를 PyPI에 publish합니다.
+
+**특징:**
+- 테스트 실행 후 publish (선택)
+- setuptools-scm 버전 관리
+- GitHub Release에 dist 파일 첨부
+
+**입력:**
+- `python_version`: Python 버전 (기본값: `3.12`)
+- `run_tests`: 테스트 실행 여부 (기본값: `true`)
+- `test_command`: 테스트 명령어 (기본값: `pytest`)
+- `create_release`: GitHub Release 생성 여부 (기본값: `true`)
+
+**필요한 Secrets:**
+- `PYPI_API_TOKEN`: PyPI API 토큰
+
+**사용법:**
+```yaml
+name: Publish to PyPI
+on:
+  push:
+    tags: ['v*.*.*']
+
+jobs:
+  publish:
+    uses: kenshin579/actions/.github/workflows/pypi-publish.yml@main
+    with:
+      python_version: '3.12'
+      run_tests: true
+      test_command: 'pytest -v'
+    secrets:
+      PYPI_API_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
+```
+
 ## 스크립트
 
 ### Weekly Todo Report (`scripts/weekly-todo-report/`)
