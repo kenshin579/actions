@@ -23,6 +23,11 @@ on:
         type: boolean
         required: false
         default: true
+      tag_name:
+        description: 'Tag name for release (required when called after release job)'
+        type: string
+        required: false
+        default: ''
     secrets:
       PYPI_API_TOKEN:
         required: true
@@ -91,10 +96,20 @@ jobs:
           TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
         run: python -m twine upload dist/*
 
+      - name: Get tag name
+        id: get_tag
+        run: |
+          if [ -n "${{ inputs.tag_name }}" ]; then
+            echo "tag=${{ inputs.tag_name }}" >> $GITHUB_OUTPUT
+          else
+            echo "tag=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+          fi
+
       - name: Create GitHub Release
         if: inputs.create_release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ steps.get_tag.outputs.tag }}
           files: dist/*
           generate_release_notes: true
         env:
