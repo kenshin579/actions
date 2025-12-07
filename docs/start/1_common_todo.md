@@ -42,39 +42,39 @@
 ## Phase 2: Repository 마이그레이션
 
 ### 2.1 stock-data-batch
-- [ ] 기존 `release.yml`을 공통 workflow 호출로 변경
-- [ ] 기존 `docker-publish.yml`을 공통 workflow 호출로 변경
+- [x] 기존 `release.yml`을 공통 workflow 호출로 변경
+- [x] 기존 `docker-publish.yml`을 공통 workflow 호출로 변경
 - [ ] 테스트: workflow_dispatch로 release 실행
 - [ ] 테스트: tag push 시 docker 이미지 빌드 확인
 
 ### 2.2 korea-investment-stock
-- [ ] `release.yml` 추가 (공통 workflow 호출)
-- [ ] 기존 `publish-pypi.yml`을 공통 workflow 호출로 변경
+- [x] `release.yml` 추가 (공통 workflow 호출)
+- [x] 기존 `publish-pypi.yml`을 공통 workflow 호출로 변경
 - [ ] 테스트: workflow_dispatch로 release 실행
 - [ ] 테스트: tag push 시 PyPI publish 확인
 
 ### 2.3 echo-server
-- [ ] `release.yml` 추가 (공통 workflow 호출)
-- [ ] 기존 `docker-push-on-tag.yml`을 공통 workflow 호출로 변경
+- [x] `release.yml` 추가 (공통 workflow 호출)
+- [x] 기존 `docker-push-on-tag.yml`을 공통 workflow 호출로 변경
 - [ ] Secrets 이름 변경: `DOCKER_REGISTRY_*` → `DOCKER_*`
 - [ ] 테스트: workflow_dispatch로 release 실행
 - [ ] 테스트: tag push 시 docker 이미지 빌드 확인
 
 ### 2.4 inspireme.advenoh.pe.kr
-- [ ] `release.yml` 추가 (공통 workflow 호출)
-- [ ] 기존 `docker-push-on-tag.yml`을 공통 workflow 호출로 변경
+- [x] `release.yml` 추가 (공통 workflow 호출)
+- [x] 기존 `docker-push-on-tag.yml`을 공통 workflow 호출로 변경
 - [ ] Secrets 이름 변경: `DOCKER_REGISTRY_*` → `DOCKER_*`
 - [ ] 테스트: workflow_dispatch로 release 실행
 - [ ] 테스트: tag push 시 docker 이미지 빌드 확인
 
 ### 2.5 toolbox
-- [ ] `release.yml` 추가 (공통 workflow 호출)
-- [ ] 기존 `docker-build.yml`을 공통 workflow 호출로 변경
+- [x] `release.yml` 추가 (공통 workflow 호출)
+- [x] 기존 `docker-build.yml`을 공통 workflow 호출로 변경
 - [ ] 테스트: workflow_dispatch로 release 실행
 - [ ] 테스트: tag push 시 docker 이미지 빌드 확인
 
 ### 2.6 echo-http-cache
-- [ ] `release.yml` 추가 (공통 workflow 호출, create_release: true)
+- [x] `release.yml` 추가 (공통 workflow 호출, create_release: true)
 - [ ] 테스트: workflow_dispatch로 release 실행
 - [ ] GitHub Release 생성 확인
 
