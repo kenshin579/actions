@@ -249,16 +249,22 @@ jobs:
               ? `| **Integration Tests** | ${integrationStats.failed === 0 ? '✅' : '❌'} | ${integrationStats.passed} passed${integrationStats.failed > 0 ? `, ${integrationStats.failed} failed` : ''}${integrationStats.skipped > 0 ? `, ${integrationStats.skipped} skipped` : ''} | ${integrationStats.time} |`
               : `| **Integration Tests** | ⏭️ | Skipped | - |`;
 
-            // 코멘트 생성
-            const comment = `## 🧪 Test Results Summary
+            // 코멘트 생성 (YAML 파서가 '|'를 리터럴 블록으로 해석하지 않도록 변수 분리)
+            const tableHeader = '| 구분 | 상태 | 결과 | 시간 |';
+            const tableSeparator = '|------|:----:|------|------|';
+            const coverageRow = `| **Coverage** | 📊 | **${coverage}** | - |`;
 
-| 구분 | 상태 | 결과 | 시간 |
-|------|:----:|------|------|
-${unitRow}
-${integrationRow}
-| **Coverage** | 📊 | **${coverage}** | - |
-
-${statusMessage}`;
+            const comment = [
+              '## 🧪 Test Results Summary',
+              '',
+              tableHeader,
+              tableSeparator,
+              unitRow,
+              integrationRow,
+              coverageRow,
+              '',
+              statusMessage
+            ].join('\n');
 
             github.rest.issues.createComment({
               issue_number: context.issue.number,
