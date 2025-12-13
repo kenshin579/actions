@@ -1,0 +1,268 @@
+name: Python Tests
+
+on:
+  workflow_call:
+    inputs:
+      python_version:
+        description: 'Python version'
+        type: string
+        default: '3.12'
+      package_manager:
+        description: 'Package manager (pip, poetry)'
+        type: string
+        default: 'pip'
+      test_path:
+        description: 'Test path'
+        type: string
+        default: '.'
+      run_unit_tests:
+        description: 'Run unit tests'
+        type: boolean
+        default: true
+      run_integration_tests:
+        description: 'Run integration tests'
+        type: boolean
+        default: false
+      unit_test_args:
+        description: 'Unit test additional arguments'
+        type: string
+        default: '-m "not integration"'
+      integration_test_args:
+        description: 'Integration test additional arguments'
+        type: string
+        default: '-m integration'
+      coverage_enabled:
+        description: 'Enable coverage collection'
+        type: boolean
+        default: true
+      coverage_package:
+        description: 'Coverage target package'
+        type: string
+        default: ''
+      install_extras:
+        description: 'Extra install options (e.g., dev,redis)'
+        type: string
+        default: 'dev'
+      post_comment:
+        description: 'Post result comment to PR'
+        type: boolean
+        default: true
+
+jobs:
+  unit-tests:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    if: ${{ inputs.run_unit_tests }}
+    outputs:
+      result: ${{ steps.pytest.outcome }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ inputs.python_version }}
+          cache: ${{ inputs.package_manager == 'poetry' && 'poetry' || 'pip' }}
+          cache-dependency-path: ${{ inputs.package_manager == 'poetry' && 'poetry.lock' || 'pyproject.toml' }}
+
+      - name: Install dependencies (pip)
+        if: inputs.package_manager == 'pip'
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[${{ inputs.install_extras }}]"
+
+      - name: Install dependencies (poetry)
+        if: inputs.package_manager == 'poetry'
+        run: |
+          pip install poetry
+          poetry install
+
+      - name: Run unit tests
+        id: pytest
+        run: |
+          COVERAGE_ARGS=""
+          if [ "${{ inputs.coverage_enabled }}" = "true" ] && [ -n "${{ inputs.coverage_package }}" ]; then
+            COVERAGE_ARGS="--cov=${{ inputs.coverage_package }} --cov-report=xml --cov-report=term-missing"
+          fi
+
+          if [ "${{ inputs.package_manager }}" = "poetry" ]; then
+            poetry run pytest ${{ inputs.test_path }} -v \
+              ${{ inputs.unit_test_args }} \
+              $COVERAGE_ARGS \
+              --junitxml=junit-unit.xml \
+              2>&1 | tee test-output.txt
+          else
+            pytest ${{ inputs.test_path }} -v \
+              ${{ inputs.unit_test_args }} \
+              $COVERAGE_ARGS \
+              --junitxml=junit-unit.xml \
+              2>&1 | tee test-output.txt
+          fi
+        continue-on-error: true
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-test-results
+          path: |
+            junit-unit.xml
+            coverage.xml
+            test-output.txt
+
+  integration-tests:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    if: ${{ inputs.run_integration_tests }}
+    outputs:
+      result: ${{ steps.pytest.outcome }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ inputs.python_version }}
+          cache: ${{ inputs.package_manager == 'poetry' && 'poetry' || 'pip' }}
+          cache-dependency-path: ${{ inputs.package_manager == 'poetry' && 'poetry.lock' || 'pyproject.toml' }}
+
+      - name: Install dependencies (pip)
+        if: inputs.package_manager == 'pip'
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[${{ inputs.install_extras }}]"
+
+      - name: Install dependencies (poetry)
+        if: inputs.package_manager == 'poetry'
+        run: |
+          pip install poetry
+          poetry install
+
+      - name: Run integration tests
+        id: pytest
+        run: |
+          if [ "${{ inputs.package_manager }}" = "poetry" ]; then
+            poetry run pytest ${{ inputs.test_path }} -v \
+              ${{ inputs.integration_test_args }} \
+              --junitxml=junit-integration.xml \
+              2>&1 | tee integration-test-output.txt
+          else
+            pytest ${{ inputs.test_path }} -v \
+              ${{ inputs.integration_test_args }} \
+              --junitxml=junit-integration.xml \
+              2>&1 | tee integration-test-output.txt
+          fi
+        continue-on-error: true
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-test-results
+          path: |
+            junit-integration.xml
+            integration-test-output.txt
+
+  report:
+    name: Test Report
+    needs: [unit-tests, integration-tests]
+    runs-on: ubuntu-latest
+    if: always() && inputs.post_comment && github.event_name == 'pull_request'
+    permissions:
+      pull-requests: write
+
+    steps:
+      - name: Download unit test results
+        uses: actions/download-artifact@v4
+        with:
+          name: unit-test-results
+          path: unit-test-results
+        continue-on-error: true
+
+      - name: Download integration test results
+        uses: actions/download-artifact@v4
+        with:
+          name: integration-test-results
+          path: integration-test-results
+        continue-on-error: true
+
+      - name: Generate report comment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+
+            // Unit test 결과 파싱
+            let unitStats = { passed: 0, failed: 0, skipped: 0, time: '0s', ran: false };
+            let unitOutput = '';
+            try {
+              unitOutput = fs.readFileSync('unit-test-results/test-output.txt', 'utf8');
+              unitStats.ran = true;
+              const match = unitOutput.match(/(\d+) passed(?:, (\d+) failed)?(?:, (\d+) skipped)?.*in ([\d.]+)s/);
+              if (match) {
+                unitStats.passed = parseInt(match[1]) || 0;
+                unitStats.failed = parseInt(match[2]) || 0;
+                unitStats.skipped = parseInt(match[3]) || 0;
+                unitStats.time = match[4] + 's';
+              }
+            } catch (e) {
+              console.log('Unit test results not found');
+            }
+
+            // Integration test 결과 파싱
+            let integrationStats = { passed: 0, failed: 0, skipped: 0, time: '0s', ran: false };
+            let integrationOutput = '';
+            try {
+              integrationOutput = fs.readFileSync('integration-test-results/integration-test-output.txt', 'utf8');
+              integrationStats.ran = true;
+              const match = integrationOutput.match(/(\d+) passed(?:, (\d+) failed)?(?:, (\d+) skipped)?.*in ([\d.]+)s/);
+              if (match) {
+                integrationStats.passed = parseInt(match[1]) || 0;
+                integrationStats.failed = parseInt(match[2]) || 0;
+                integrationStats.skipped = parseInt(match[3]) || 0;
+                integrationStats.time = match[4] + 's';
+              }
+            } catch (e) {
+              console.log('Integration test results not found');
+            }
+
+            // Coverage 파싱
+            let coverage = 'N/A';
+            try {
+              const covMatch = unitOutput.match(/TOTAL\s+\d+\s+\d+\s+(\d+)%/);
+              if (covMatch) coverage = covMatch[1] + '%';
+            } catch (e) {}
+
+            // 상태 결정
+            const totalFailed = unitStats.failed + integrationStats.failed;
+            const statusMessage = totalFailed === 0 ? '### ✅ All Tests Passed!' : `### ❌ ${totalFailed} Test(s) Failed`;
+
+            // Unit test 결과 행
+            const unitRow = unitStats.ran
+              ? `| **Unit Tests** | ${unitStats.failed === 0 ? '✅' : '❌'} | ${unitStats.passed} passed${unitStats.failed > 0 ? `, ${unitStats.failed} failed` : ''}${unitStats.skipped > 0 ? `, ${unitStats.skipped} skipped` : ''} | ${unitStats.time} |`
+              : `| **Unit Tests** | ⏭️ | Skipped | - |`;
+
+            // Integration test 결과 행
+            const integrationRow = integrationStats.ran
+              ? `| **Integration Tests** | ${integrationStats.failed === 0 ? '✅' : '❌'} | ${integrationStats.passed} passed${integrationStats.failed > 0 ? `, ${integrationStats.failed} failed` : ''}${integrationStats.skipped > 0 ? `, ${integrationStats.skipped} skipped` : ''} | ${integrationStats.time} |`
+              : `| **Integration Tests** | ⏭️ | Skipped | - |`;
+
+            // 코멘트 생성
+            const comment = `## 🧪 Test Results Summary
+
+| 구분 | 상태 | 결과 | 시간 |
+|------|:----:|------|------|
+${unitRow}
+${integrationRow}
+| **Coverage** | 📊 | **${coverage}** | - |
+
+${statusMessage}`;
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: comment
+            });

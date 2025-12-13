@@ -1,0 +1,243 @@
+name: Go Tests
+
+on:
+  workflow_call:
+    inputs:
+      go_version:
+        description: 'Go version'
+        type: string
+        default: '1.24'
+      test_path:
+        description: 'Test path'
+        type: string
+        default: './...'
+      run_unit_tests:
+        description: 'Run unit tests'
+        type: boolean
+        default: true
+      run_integration_tests:
+        description: 'Run integration tests'
+        type: boolean
+        default: false
+      unit_test_args:
+        description: 'Unit test additional arguments'
+        type: string
+        default: '-v -short'
+      integration_test_args:
+        description: 'Integration test additional arguments'
+        type: string
+        default: '-v -run Integration'
+      coverage_enabled:
+        description: 'Enable coverage collection'
+        type: boolean
+        default: true
+      docker_compose_file:
+        description: 'Docker compose file for integration tests'
+        type: string
+        default: 'docker-compose.yml'
+      post_comment:
+        description: 'Post result comment to PR'
+        type: boolean
+        default: true
+
+jobs:
+  unit-tests:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    if: ${{ inputs.run_unit_tests }}
+    outputs:
+      result: ${{ steps.test.outcome }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ inputs.go_version }}
+          cache: true
+
+      - name: Run unit tests
+        id: test
+        run: |
+          COVERAGE_ARGS=""
+          if [ "${{ inputs.coverage_enabled }}" = "true" ]; then
+            COVERAGE_ARGS="-coverprofile=coverage.out"
+          fi
+
+          go test ${{ inputs.test_path }} \
+            ${{ inputs.unit_test_args }} \
+            $COVERAGE_ARGS \
+            2>&1 | tee test-output.txt
+        continue-on-error: true
+
+      - name: Generate coverage report
+        if: inputs.coverage_enabled
+        run: |
+          if [ -f coverage.out ]; then
+            go tool cover -func=coverage.out | tee coverage-report.txt
+          fi
+        continue-on-error: true
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-test-results
+          path: |
+            test-output.txt
+            coverage.out
+            coverage-report.txt
+
+  integration-tests:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    if: ${{ inputs.run_integration_tests }}
+    outputs:
+      result: ${{ steps.test.outcome }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ inputs.go_version }}
+          cache: true
+
+      - name: Start Docker services
+        run: |
+          if [ -f "${{ inputs.docker_compose_file }}" ]; then
+            docker-compose -f ${{ inputs.docker_compose_file }} up -d
+            sleep 10  # Wait for services to be ready
+          fi
+
+      - name: Run integration tests
+        id: test
+        run: |
+          go test ${{ inputs.test_path }} \
+            ${{ inputs.integration_test_args }} \
+            2>&1 | tee integration-test-output.txt
+        continue-on-error: true
+
+      - name: Stop Docker services
+        if: always()
+        run: |
+          if [ -f "${{ inputs.docker_compose_file }}" ]; then
+            docker-compose -f ${{ inputs.docker_compose_file }} down
+          fi
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-test-results
+          path: integration-test-output.txt
+
+  report:
+    name: Test Report
+    needs: [unit-tests, integration-tests]
+    runs-on: ubuntu-latest
+    if: always() && inputs.post_comment && github.event_name == 'pull_request'
+    permissions:
+      pull-requests: write
+
+    steps:
+      - name: Download unit test results
+        uses: actions/download-artifact@v4
+        with:
+          name: unit-test-results
+          path: unit-test-results
+        continue-on-error: true
+
+      - name: Download integration test results
+        uses: actions/download-artifact@v4
+        with:
+          name: integration-test-results
+          path: integration-test-results
+        continue-on-error: true
+
+      - name: Generate report comment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+
+            // Unit test 결과 파싱
+            let unitResult = 'N/A';
+            let unitTime = '-';
+            let unitFailed = false;
+            let unitRan = false;
+            try {
+              const output = fs.readFileSync('unit-test-results/test-output.txt', 'utf8');
+              unitRan = true;
+              const okMatch = output.match(/ok\s+\S+\s+([\d.]+)s/g);
+              const failMatch = output.match(/FAIL/);
+              unitFailed = !!failMatch;
+              unitResult = failMatch ? 'FAIL' : (okMatch ? `ok (${okMatch.length} packages)` : 'ok');
+              const timeMatches = output.match(/(\d+\.\d+)s/g);
+              if (timeMatches && timeMatches.length > 0) {
+                const lastTime = timeMatches[timeMatches.length - 1];
+                unitTime = lastTime;
+              }
+            } catch (e) {
+              console.log('Unit test results not found');
+            }
+
+            // Coverage 파싱
+            let coverage = 'N/A';
+            try {
+              const covOutput = fs.readFileSync('unit-test-results/coverage-report.txt', 'utf8');
+              const match = covOutput.match(/total:\s+\(statements\)\s+([\d.]+)%/);
+              if (match) coverage = match[1] + '%';
+            } catch (e) {
+              console.log('Coverage report not found');
+            }
+
+            // Integration test 결과 파싱
+            let integrationResult = 'N/A';
+            let integrationTime = '-';
+            let integrationFailed = false;
+            let integrationRan = false;
+            try {
+              const output = fs.readFileSync('integration-test-results/integration-test-output.txt', 'utf8');
+              integrationRan = true;
+              const failMatch = output.match(/FAIL/);
+              integrationFailed = !!failMatch;
+              integrationResult = failMatch ? 'FAIL' : 'ok';
+              const timeMatches = output.match(/(\d+\.\d+)s/g);
+              if (timeMatches && timeMatches.length > 0) {
+                integrationTime = timeMatches[timeMatches.length - 1];
+              }
+            } catch (e) {
+              console.log('Integration test results not found');
+            }
+
+            const hasFailed = unitFailed || integrationFailed;
+
+            // Unit test 결과 행
+            const unitRow = unitRan
+              ? `| **Unit Tests** | ${unitFailed ? '❌' : '✅'} | ${unitResult} | ${unitTime} |`
+              : `| **Unit Tests** | ⏭️ | Skipped | - |`;
+
+            // Integration test 결과 행
+            const integrationRow = integrationRan
+              ? `| **Integration Tests** | ${integrationFailed ? '❌' : '✅'} | ${integrationResult} | ${integrationTime} |`
+              : `| **Integration Tests** | ⏭️ | Skipped | - |`;
+
+            const comment = `## 🧪 Test Results Summary
+
+| 구분 | 상태 | 결과 | 시간 |
+|------|:----:|------|------|
+${unitRow}
+${integrationRow}
+| **Coverage** | 📊 | **${coverage}** | - |
+
+${hasFailed ? '### ❌ Tests Failed' : '### ✅ All Tests Passed!'}`;
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: comment
+            });
