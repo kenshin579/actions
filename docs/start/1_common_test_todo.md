@@ -39,8 +39,8 @@
 - [x] PR 코멘트 생성 (`actions/github-script@v7`)
 
 ### 1.5 테스트
-- [ ] korea-investment-stock에서 workflow 호출 테스트
-- [ ] stock-data-batch에서 Poetry 모드 테스트
+- [x] korea-investment-stock에서 workflow 호출 테스트
+- [x] stock-data-batch에서 Poetry 모드 테스트
 - [ ] PR 코멘트 출력 확인
 
 ---
@@ -81,8 +81,8 @@
 - [x] PR 코멘트 생성
 
 ### 2.5 테스트
-- [ ] echo-server에서 workflow 호출 테스트
-- [ ] echo-http-cache에서 integration 테스트
+- [x] echo-server에서 workflow 호출 테스트
+- [x] echo-http-cache에서 integration 테스트
 - [ ] PR 코멘트 출력 확인
 
 ---
@@ -90,23 +90,23 @@
 ## Phase 3: 각 Repository 적용
 
 ### 3.1 korea-investment-stock
-- [ ] `.github/workflows/tests.yml` 생성 (또는 기존 파일 수정)
-- [ ] `unit-test-python.yml` 호출 설정
+- [x] `.github/workflows/tests.yml` 생성 (또는 기존 파일 수정)
+- [x] `unit-test-python.yml` 호출 설정
 - [ ] PR 생성하여 테스트
 
 ### 3.2 stock-data-batch
-- [ ] `.github/workflows/tests.yml` 생성
-- [ ] `unit-test-python.yml` 호출 (poetry 모드)
+- [x] `.github/workflows/tests.yml` 생성
+- [x] `unit-test-python.yml` 호출 (poetry 모드)
 - [ ] PR 생성하여 테스트
 
 ### 3.3 echo-server
-- [ ] `.github/workflows/tests.yml` 생성
-- [ ] `unit-test-go.yml` 호출
+- [x] `.github/workflows/tests.yml` 생성
+- [x] `unit-test-go.yml` 호출
 - [ ] PR 생성하여 테스트
 
 ### 3.4 echo-http-cache
-- [ ] `.github/workflows/tests.yml` 생성
-- [ ] `unit-test-go.yml` 호출 (integration + benchmarks)
+- [x] `.github/workflows/tests.yml` 생성
+- [x] `unit-test-go.yml` 호출 (integration + benchmarks)
 - [ ] PR 생성하여 테스트
 
 ---
