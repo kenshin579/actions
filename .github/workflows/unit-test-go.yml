@@ -236,15 +236,22 @@ jobs:
               ? `| **Integration Tests** | ${integrationFailed ? '❌' : '✅'} | ${integrationResult} | ${integrationTime} |`
               : `| **Integration Tests** | ⏭️ | Skipped | - |`;
 
-            const comment = `## 🧪 Test Results Summary
+            const tableHeader = '| Type | Status | Result | Time |';
+            const tableSeparator = '|------|:------:|--------|------|';
+            const coverageRow = '| **Coverage** | 📊 | **' + coverage + '** | - |';
+            const statusLine = hasFailed ? '### ❌ Tests Failed' : '### ✅ All Tests Passed!';
 
-| 구분 | 상태 | 결과 | 시간 |
-|------|:----:|------|------|
-${unitRow}
-${integrationRow}
-| **Coverage** | 📊 | **${coverage}** | - |
-
-${hasFailed ? '### ❌ Tests Failed' : '### ✅ All Tests Passed!'}`;
+            const comment = [
+              '## 🧪 Test Results Summary',
+              '',
+              tableHeader,
+              tableSeparator,
+              unitRow,
+              integrationRow,
+              coverageRow,
+              '',
+              statusLine
+            ].join('\n');
 
             github.rest.issues.createComment({
               issue_number: context.issue.number,
