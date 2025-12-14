@@ -39,6 +39,10 @@ on:
         description: 'Post result comment to PR'
         type: boolean
         default: true
+      working_directory:
+        description: 'Working directory for tests (monorepo support)'
+        type: string
+        default: '.'
 
 jobs:
   unit-tests:
@@ -57,9 +61,11 @@ jobs:
         with:
           go-version: ${{ inputs.go_version }}
           cache: true
+          cache-dependency-path: ${{ inputs.working_directory }}/go.sum
 
       - name: Run unit tests
         id: test
+        working-directory: ${{ inputs.working_directory }}
         run: |
           COVERAGE_ARGS=""
           if [ "${{ inputs.coverage_enabled }}" = "true" ]; then
@@ -74,6 +80,7 @@ jobs:
 
       - name: Generate coverage report
         if: inputs.coverage_enabled
+        working-directory: ${{ inputs.working_directory }}
         run: |
           if [ -f coverage.out ]; then
             go tool cover -func=coverage.out | tee coverage-report.txt
@@ -85,9 +92,9 @@ jobs:
         with:
           name: unit-test-results
           path: |
-            test-output.txt
-            coverage.out
-            coverage-report.txt
+            ${{ inputs.working_directory }}/test-output.txt
+            ${{ inputs.working_directory }}/coverage.out
+            ${{ inputs.working_directory }}/coverage-report.txt
 
   integration-tests:
     name: Integration Tests
@@ -105,8 +112,10 @@ jobs:
         with:
           go-version: ${{ inputs.go_version }}
           cache: true
+          cache-dependency-path: ${{ inputs.working_directory }}/go.sum
 
       - name: Start Docker services
+        working-directory: ${{ inputs.working_directory }}
         run: |
           if [ -f "${{ inputs.docker_compose_file }}" ]; then
             docker-compose -f ${{ inputs.docker_compose_file }} up -d
@@ -115,6 +124,7 @@ jobs:
 
       - name: Run integration tests
         id: test
+        working-directory: ${{ inputs.working_directory }}
         run: |
           go test ${{ inputs.test_path }} \
             ${{ inputs.integration_test_args }} \
@@ -123,6 +133,7 @@ jobs:
 
       - name: Stop Docker services
         if: always()
+        working-directory: ${{ inputs.working_directory }}
         run: |
           if [ -f "${{ inputs.docker_compose_file }}" ]; then
             docker-compose -f ${{ inputs.docker_compose_file }} down
@@ -132,7 +143,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: integration-test-results
-          path: integration-test-output.txt
+          path: ${{ inputs.working_directory }}/integration-test-output.txt
 
   report:
     name: Test Report
