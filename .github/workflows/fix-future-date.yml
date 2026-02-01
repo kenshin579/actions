@@ -1,0 +1,149 @@
+name: Fix Future Date
+
+on:
+  workflow_call:
+    inputs:
+      pr_number:
+        required: true
+        type: number
+
+jobs:
+  fix-future-date:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Check and fix future dates
+        id: fix-dates
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const prNumber = ${{ inputs.pr_number }};
+            const today = new Date().toISOString().split('T')[0];
+
+            // merge된 PR에서 변경된 파일 목록 조회
+            const { data: files } = await github.rest.pulls.listFiles({
+              owner, repo,
+              pull_number: prNumber
+            });
+
+            // index.md 파일만 필터링
+            const indexFiles = files.filter(f => f.filename.endsWith('index.md'));
+
+            if (indexFiles.length === 0) {
+              console.log('index.md 파일이 없습니다. 종료합니다.');
+              return;
+            }
+
+            const filesToFix = [];
+
+            for (const file of indexFiles) {
+              try {
+                const { data: content } = await github.rest.repos.getContent({
+                  owner, repo,
+                  path: file.filename
+                });
+
+                const fileContent = Buffer.from(content.content, 'base64').toString('utf-8');
+                const dateMatch = fileContent.match(/^---[\s\S]*?date:\s*(\d{4}-\d{2}-\d{2})[\s\S]*?---/);
+
+                if (dateMatch && dateMatch[1] > today) {
+                  console.log(`미래 날짜 감지: ${file.filename} (date: ${dateMatch[1]})`);
+                  filesToFix.push({ path: file.filename, oldDate: dateMatch[1] });
+                } else {
+                  console.log(`정상: ${file.filename} (date: ${dateMatch ? dateMatch[1] : 'N/A'})`);
+                }
+              } catch (error) {
+                console.log(`파싱 실패 (스킵): ${file.filename} - ${error.message}`);
+              }
+            }
+
+            if (filesToFix.length === 0) {
+              console.log('보정할 파일이 없습니다. 종료합니다.');
+              return;
+            }
+
+            core.setOutput('files_to_fix', JSON.stringify(filesToFix));
+            core.setOutput('today', today);
+            core.setOutput('pr_number', prNumber);
+
+      - name: Fix dates and create PR
+        if: steps.fix-dates.outputs.files_to_fix != ''
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const filesToFix = JSON.parse('${{ steps.fix-dates.outputs.files_to_fix }}');
+            const today = '${{ steps.fix-dates.outputs.today }}';
+            const prNumber = ${{ steps.fix-dates.outputs.pr_number }};
+            const branchName = `chore/fix-future-date-${prNumber}`;
+
+            // main 브랜치의 최신 SHA 조회
+            const { data: ref } = await github.rest.git.getRef({
+              owner, repo,
+              ref: 'heads/main'
+            });
+
+            // 보정 브랜치 생성
+            await github.rest.git.createRef({
+              owner, repo,
+              ref: `refs/heads/${branchName}`,
+              sha: ref.object.sha
+            });
+
+            const changedFiles = [];
+
+            for (const file of filesToFix) {
+              // 파일 내용 조회
+              const { data: content } = await github.rest.repos.getContent({
+                owner, repo,
+                path: file.path,
+                ref: branchName
+              });
+
+              let fileContent = Buffer.from(content.content, 'base64').toString('utf-8');
+
+              // date, update 필드 치환
+              fileContent = fileContent.replace(
+                new RegExp(`^(date:\\s*)${file.oldDate}`, 'm'),
+                `$1${today}`
+              );
+              fileContent = fileContent.replace(
+                new RegExp(`^(update:\\s*)${file.oldDate}`, 'm'),
+                `$1${today}`
+              );
+
+              // 파일 업데이트
+              await github.rest.repos.createOrUpdateFileContents({
+                owner, repo,
+                path: file.path,
+                message: `[chore] 미래 날짜를 현재 날짜로 보정 (${file.path})`,
+                content: Buffer.from(fileContent).toString('base64'),
+                branch: branchName,
+                sha: content.sha
+              });
+
+              changedFiles.push(`- \`${file.path}\`: ${file.oldDate} → ${today}`);
+              console.log(`보정 완료: ${file.path} (${file.oldDate} → ${today})`);
+            }
+
+            // PR 생성
+            const { data: pr } = await github.rest.pulls.create({
+              owner, repo,
+              title: '[chore] 미래 날짜를 현재 날짜로 보정',
+              head: branchName,
+              base: 'main',
+              body: `PR #${prNumber} merge 시 미래 날짜가 감지되어 자동 보정합니다.\n\n### 변경 파일\n${changedFiles.join('\n')}`
+            });
+
+            console.log(`PR 생성 완료: #${pr.number} (${pr.html_url})`);
