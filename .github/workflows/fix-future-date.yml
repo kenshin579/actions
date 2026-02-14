@@ -6,6 +6,10 @@ on:
       pr_number:
         required: true
         type: number
+      content_dir:
+        required: false
+        type: string
+        default: ''
 
 jobs:
   fix-future-date:
@@ -35,8 +39,13 @@ jobs:
               pull_number: prNumber
             });
 
-            // index.md 파일만 필터링
-            const indexFiles = files.filter(f => f.filename.endsWith('index.md'));
+            // index.md 파일만 필터링 (content_dir이 지정되면 해당 경로만 대상)
+            const contentDir = '${{ inputs.content_dir }}';
+            const indexFiles = files.filter(f => {
+              if (!f.filename.endsWith('index.md')) return false;
+              if (contentDir && !f.filename.startsWith(contentDir + '/')) return false;
+              return true;
+            });
 
             if (indexFiles.length === 0) {
               console.log('index.md 파일이 없습니다. 종료합니다.');
