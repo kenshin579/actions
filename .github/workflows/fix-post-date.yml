@@ -1,4 +1,4 @@
-name: Fix Future Date
+name: Fix Post Date
 
 on:
   workflow_call:
@@ -12,7 +12,7 @@ on:
         default: ''
 
 jobs:
-  fix-future-date:
+  fix-post-date:
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -22,7 +22,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Check and fix future dates
+      - name: Check and fix dates
         id: fix-dates
         uses: actions/github-script@v7
         with:
@@ -64,8 +64,9 @@ jobs:
                 const fileContent = Buffer.from(content.content, 'base64').toString('utf-8');
                 const dateMatch = fileContent.match(/^---[\s\S]*?date:\s*(\d{4}-\d{2}-\d{2})[\s\S]*?---/);
 
-                if (dateMatch && dateMatch[1] > today) {
-                  console.log(`미래 날짜 감지: ${file.filename} (date: ${dateMatch[1]})`);
+                if (dateMatch && dateMatch[1] !== today) {
+                  const label = dateMatch[1] > today ? '미래' : '과거';
+                  console.log(`${label} 날짜 감지: ${file.filename} (date: ${dateMatch[1]})`);
                   filesToFix.push({ path: file.filename, oldDate: dateMatch[1] });
                 } else {
                   console.log(`정상: ${file.filename} (date: ${dateMatch ? dateMatch[1] : 'N/A'})`);
@@ -87,15 +88,19 @@ jobs:
       - name: Fix dates and create PR
         if: steps.fix-dates.outputs.files_to_fix != ''
         uses: actions/github-script@v7
+        env:
+          FILES_TO_FIX: ${{ steps.fix-dates.outputs.files_to_fix }}
+          TODAY: ${{ steps.fix-dates.outputs.today }}
+          PR_NUMBER: ${{ steps.fix-dates.outputs.pr_number }}
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
             const owner = context.repo.owner;
             const repo = context.repo.repo;
-            const filesToFix = JSON.parse('${{ steps.fix-dates.outputs.files_to_fix }}');
-            const today = '${{ steps.fix-dates.outputs.today }}';
-            const prNumber = ${{ steps.fix-dates.outputs.pr_number }};
-            const branchName = `chore/fix-future-date-${prNumber}`;
+            const filesToFix = JSON.parse(process.env.FILES_TO_FIX);
+            const today = process.env.TODAY;
+            const prNumber = parseInt(process.env.PR_NUMBER, 10);
+            const branchName = `chore/fix-post-date-${prNumber}`;
 
             // main 브랜치의 최신 SHA 조회
             const { data: ref } = await github.rest.git.getRef({
@@ -103,12 +108,26 @@ jobs:
               ref: 'heads/main'
             });
 
-            // 보정 브랜치 생성
-            await github.rest.git.createRef({
-              owner, repo,
-              ref: `refs/heads/${branchName}`,
-              sha: ref.object.sha
-            });
+            // 보정 브랜치 생성 (재실행 시 기존 브랜치 삭제 후 재생성)
+            try {
+              await github.rest.git.createRef({
+                owner, repo,
+                ref: `refs/heads/${branchName}`,
+                sha: ref.object.sha
+              });
+            } catch (error) {
+              if (error.status === 422) {
+                console.log(`브랜치 ${branchName} 이미 존재. 삭제 후 재생성합니다.`);
+                await github.rest.git.deleteRef({ owner, repo, ref: `heads/${branchName}` });
+                await github.rest.git.createRef({
+                  owner, repo,
+                  ref: `refs/heads/${branchName}`,
+                  sha: ref.object.sha
+                });
+              } else {
+                throw error;
+              }
+            }
 
             const changedFiles = [];
 
@@ -122,13 +141,14 @@ jobs:
 
               let fileContent = Buffer.from(content.content, 'base64').toString('utf-8');
 
-              // date, update 필드 치환
+              // date 필드 치환
               fileContent = fileContent.replace(
                 new RegExp(`^(date:\\s*)${file.oldDate}`, 'm'),
                 `$1${today}`
               );
+              // update 필드는 값과 무관하게 오늘 날짜로 보정
               fileContent = fileContent.replace(
-                new RegExp(`^(update:\\s*)${file.oldDate}`, 'm'),
+                /^(update:\s*)\d{4}-\d{2}-\d{2}/m,
                 `$1${today}`
               );
 
@@ -136,7 +156,7 @@ jobs:
               await github.rest.repos.createOrUpdateFileContents({
                 owner, repo,
                 path: file.path,
-                message: `[chore] 미래 날짜를 현재 날짜로 보정 (${file.path})`,
+                message: `[chore] 포스팅 날짜를 현재 날짜로 보정 (${file.path})`,
                 content: Buffer.from(fileContent).toString('base64'),
                 branch: branchName,
                 sha: content.sha
@@ -149,10 +169,10 @@ jobs:
             // PR 생성
             const { data: pr } = await github.rest.pulls.create({
               owner, repo,
-              title: '[chore] 미래 날짜를 현재 날짜로 보정',
+              title: '[chore] 포스팅 날짜를 현재 날짜로 보정',
               head: branchName,
               base: 'main',
-              body: `PR #${prNumber} merge 시 미래 날짜가 감지되어 자동 보정합니다.\n\n### 변경 파일\n${changedFiles.join('\n')}`
+              body: `PR #${prNumber} merge 시 오늘과 다른 날짜가 감지되어 자동 보정합니다.\n\n### 변경 파일\n${changedFiles.join('\n')}`
             });
 
             console.log(`PR 생성 완료: #${pr.number} (${pr.html_url})`);
