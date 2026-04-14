@@ -10,6 +10,11 @@ on:
         required: false
         type: string
         default: ''
+      exclude_dirs:
+        required: false
+        type: string
+        default: ''
+        description: '날짜 보정에서 제외할 디렉토리 (쉼표 구분, 예: contents/biweekly,contents/archive)'
 
 jobs:
   fix-post-date:
@@ -41,9 +46,11 @@ jobs:
 
             // index.md 파일만 필터링 (content_dir이 지정되면 해당 경로만 대상)
             const contentDir = '${{ inputs.content_dir }}';
+            const excludeDirs = '${{ inputs.exclude_dirs }}'.split(',').map(d => d.trim()).filter(Boolean);
             const indexFiles = files.filter(f => {
               if (!f.filename.endsWith('index.md')) return false;
               if (contentDir && !f.filename.startsWith(contentDir + '/')) return false;
+              if (excludeDirs.some(dir => f.filename.startsWith(dir + '/'))) return false;
               return true;
             });
 
