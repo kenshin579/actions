@@ -71,10 +71,11 @@ jobs:
                 const fileContent = Buffer.from(content.content, 'base64').toString('utf-8');
                 const dateMatch = fileContent.match(/^---[\s\S]*?date:\s*(\d{4}-\d{2}-\d{2})[\s\S]*?---/);
 
-                if (dateMatch && dateMatch[1] !== today) {
-                  const label = dateMatch[1] > today ? '미래' : '과거';
-                  console.log(`${label} 날짜 감지: ${file.filename} (date: ${dateMatch[1]})`);
+                if (dateMatch && dateMatch[1] > today) {
+                  console.log(`미래 날짜 감지: ${file.filename} (date: ${dateMatch[1]})`);
                   filesToFix.push({ path: file.filename, oldDate: dateMatch[1] });
+                } else if (dateMatch && dateMatch[1] < today) {
+                  console.log(`과거 날짜 (의도된 것으로 간주, 스킵): ${file.filename} (date: ${dateMatch[1]})`);
                 } else {
                   console.log(`정상: ${file.filename} (date: ${dateMatch ? dateMatch[1] : 'N/A'})`);
                 }
@@ -179,7 +180,7 @@ jobs:
               title: '[chore] 포스팅 날짜를 현재 날짜로 보정',
               head: branchName,
               base: 'main',
-              body: `PR #${prNumber} merge 시 오늘과 다른 날짜가 감지되어 자동 보정합니다.\n\n### 변경 파일\n${changedFiles.join('\n')}`
+              body: `PR #${prNumber} merge 시 미래 날짜가 감지되어 오늘 날짜로 자동 보정합니다.\n\n### 변경 파일\n${changedFiles.join('\n')}`
             });
 
             console.log(`PR 생성 완료: #${pr.number} (${pr.html_url})`);
